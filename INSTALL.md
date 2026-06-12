@@ -1,5 +1,10 @@
 # Installationsguide
 
+> **Tips:** Spelet kan också publiceras på GitHub Pages och spelas direkt i
+> webbläsaren utan någon installation alls — se avsnittet *Spela direkt i
+> webbläsaren* i [README.md](README.md). Guiden nedan gäller lokal körning
+> och utveckling.
+
 Den här guiden tar dig från en helt ren dator (inga utvecklingsverktyg
 installerade) till ett körande spel. Den täcker Windows, macOS och Linux.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveInvasion } from './combat';
+import { resolveBombardment, resolveInvasion } from './combat';
 import { newGame, homeOf } from './state';
 
 describe('resolveInvasion', () => {
@@ -32,5 +32,29 @@ describe('resolveInvasion', () => {
     target.troops = 0;
     const report = resolveInvasion(s, target, 'player', 1000);
     expect(report.lasersDestroyed).toBeGreaterThan(0);
+  });
+});
+
+describe('resolveBombardment', () => {
+  it('slår ut trupper och kan slå ut försvar', () => {
+    const s = newGame(0, 42);
+    const target = homeOf(s, 'enemy')!;
+    target.troops = 2000;
+    target.defense = 3;
+    const before = { troops: target.troops, defense: target.defense };
+    const result = resolveBombardment(s, target, 'player', 10);
+    expect(result.troopsKilled).toBeGreaterThan(0);
+    expect(target.troops).toBe(before.troops - result.troopsKilled);
+    expect(target.defense).toBe(before.defense - result.defenseDestroyed);
+    expect(target.owner).toBe('enemy'); // bombardemang erövrar inte
+  });
+
+  it('överlevande kryssare återvänder till flottan', () => {
+    const s = newGame(0, 42);
+    const target = homeOf(s, 'enemy')!;
+    target.defense = 0;
+    const fleet = s.player.battleCruisers;
+    resolveBombardment(s, target, 'player', 4);
+    expect(s.player.battleCruisers).toBe(fleet + 4); // inga förluster utan försvar
   });
 });
