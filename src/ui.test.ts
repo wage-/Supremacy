@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { init } from './ui';
 
 function click(selector: string): void {
@@ -9,13 +9,21 @@ function click(selector: string): void {
 }
 
 describe('ui', () => {
+  let confirmSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     localStorage.clear();
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     document.body.innerHTML = '<div id="app"></div><div id="toast" hidden></div>';
     init();
     // Modulen behåller speltillståndet mellan testerna — gå tillbaka till menyn.
     const quit = document.querySelector<HTMLElement>('[data-action="quit"]');
     if (quit) quit.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    confirmSpy.mockClear();
+  });
+
+  afterEach(() => {
+    confirmSpy.mockRestore();
   });
 
   it('visar startskärmen med fyra system', () => {
@@ -47,6 +55,31 @@ describe('ui', () => {
     click('[data-action="build"][data-building="farm"]');
     expect(document.getElementById('toast')!.hidden).toBe(true);
     expect(document.body.textContent).toContain('Odlingar');
+  });
+
+  it('varnar innan man lämnar ett osparat spel', () => {
+    click('[data-action="start"][data-difficulty="0"]');
+    click('[data-action="end-day"]');
+
+    confirmSpy.mockReturnValue(false);
+    click('[data-action="quit"]');
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(document.body.textContent).toContain('Dag 2'); // spelet kvar
+
+    confirmSpy.mockReturnValue(true);
+    click('[data-action="quit"]');
+    expect(document.body.textContent).toContain('Välj stjärnsystem');
+  });
+
+  it('varnar inte när spelet är sparat', () => {
+    click('[data-action="start"][data-difficulty="0"]');
+    click('[data-action="end-day"]');
+    click('[data-action="save"]');
+
+    confirmSpy.mockReturnValue(false);
+    click('[data-action="quit"]');
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Välj stjärnsystem');
   });
 
   it('sparar och laddar via localStorage', () => {

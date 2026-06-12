@@ -8,9 +8,11 @@ const SAVE_KEY = 'supremacy-save';
 interface UiState {
   state: GameState | null;
   selectedPlanet: number;
+  /** Finns det framsteg som inte sparats sedan senaste Spara/Ladda? */
+  dirty: boolean;
 }
 
-const ui: UiState = { state: null, selectedPlanet: 0 };
+const ui: UiState = { state: null, selectedPlanet: 0, dirty: false };
 
 const RESOURCE_LABELS: Record<Resource, string> = {
   food: 'Mat',
@@ -283,6 +285,7 @@ function sel(id: string): number {
 
 function act(result: game.ActionResult): void {
   if (result) showError(result);
+  else ui.dirty = true;
   render();
 }
 
@@ -292,6 +295,7 @@ function handleAction(el: HTMLElement): void {
   if (action === 'start') {
     ui.state = newGame(Number(el.dataset.difficulty) as Difficulty);
     ui.selectedPlanet = 0;
+    ui.dirty = true;
     render();
     return;
   }
@@ -300,11 +304,20 @@ function handleAction(el: HTMLElement): void {
     if (raw) {
       ui.state = JSON.parse(raw) as GameState;
       ui.selectedPlanet = 0;
+      ui.dirty = false;
     }
     render();
     return;
   }
   if (action === 'quit') {
+    if (
+      ui.state &&
+      ui.state.status === 'playing' &&
+      ui.dirty &&
+      !window.confirm('Avsluta utan att spara? Osparade framsteg går förlorade.')
+    ) {
+      return;
+    }
     ui.state = null;
     render();
     return;
@@ -316,14 +329,17 @@ function handleAction(el: HTMLElement): void {
   switch (action) {
     case 'save':
       localStorage.setItem(SAVE_KEY, JSON.stringify(s));
+      ui.dirty = false;
       showError('Spelet sparat.');
       break;
     case 'end-day':
       game.endDay(s);
+      ui.dirty = true;
       render();
       break;
     case 'end-week':
       for (let i = 0; i < 5 && s.status === 'playing'; i++) game.endDay(s);
+      ui.dirty = true;
       render();
       break;
     case 'select':
@@ -362,6 +378,9 @@ function handleAction(el: HTMLElement): void {
 
 export function init(): void {
   const app = document.getElementById('app')!;
+  window.addEventListener('beforeunload', (e) => {
+    if (ui.state && ui.state.status === 'playing' && ui.dirty) e.preventDefault();
+  });
   app.addEventListener('click', (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (el && el.dataset.action !== 'tax') handleAction(el);
