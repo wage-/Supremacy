@@ -18,7 +18,9 @@ Vinn genom att erövra fiendens hemplanet — förlora om din Starbas faller.
 - Fyra stjärnsystem med stigande svårighetsgrad, precis som i originalet
 
 Spelet är turordningsbaserat: tryck **Nästa dag** så rullar produktion,
-befolkning, terraformning och fiendens drag. Spara/ladda via `localStorage`.
+befolkning, terraformning och fiendens drag. Sparas via `localStorage`:
+en manuell slot (**Spara**-knappen) plus ett **autospar** som uppdateras
+efter varje handling — båda kan återupptas från huvudmenyn.
 
 ## Kom igång
 

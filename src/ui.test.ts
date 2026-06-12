@@ -82,6 +82,15 @@ describe('ui', () => {
     expect(document.body.textContent).toContain('Välj stjärnsystem');
   });
 
+  it('autosparar varje dag och kan återupptas från menyn', () => {
+    click('[data-action="start"][data-difficulty="0"]');
+    click('[data-action="end-day"]');
+    click('[data-action="quit"]'); // confirm är mockad till true
+    expect(document.body.textContent).toContain('Fortsätt autospar (dag 2)');
+    click('[data-action="load"][data-slot="auto"]');
+    expect(document.body.textContent).toContain('Dag 2');
+  });
+
   it('sparar och laddar via localStorage', () => {
     click('[data-action="start"][data-difficulty="1"]');
     click('[data-action="end-day"]');

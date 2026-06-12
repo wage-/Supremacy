@@ -4,6 +4,7 @@ import { newGame } from './game/state';
 import type { Building, Difficulty, GameState, Planet, Resource } from './game/types';
 
 const SAVE_KEY = 'supremacy-save';
+const AUTOSAVE_KEY = 'supremacy-autosave';
 
 interface UiState {
   state: GameState | null;
@@ -58,6 +59,23 @@ function showError(msg: string): void {
   toastTimer = setTimeout(() => (el.hidden = true), 3500);
 }
 
+/** Dagen i en sparfil, eller null om slotten är tom/trasig. */
+function savedDay(key: string): number | null {
+  const raw = localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return (JSON.parse(raw) as GameState).day;
+  } catch {
+    return null;
+  }
+}
+
+/** Skriv autosparet — eller rensa det när partiet är avgjort. */
+function autosave(s: GameState): void {
+  if (s.status === 'playing') localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(s));
+  else localStorage.removeItem(AUTOSAVE_KEY);
+}
+
 function startScreen(): string {
   const systems = ([0, 1, 2, 3] as Difficulty[])
     .map((d) => {
@@ -69,7 +87,8 @@ function startScreen(): string {
       </button>`;
     })
     .join('');
-  const hasSave = localStorage.getItem(SAVE_KEY) !== null;
+  const manualDay = savedDay(SAVE_KEY);
+  const autoDay = savedDay(AUTOSAVE_KEY);
   return `<div class="screen-start">
     <div>
       <h1 class="title">SUPREMACY</h1>
@@ -77,7 +96,10 @@ function startScreen(): string {
     </div>
     <div>Välj stjärnsystem:</div>
     <div class="system-buttons">${systems}</div>
-    ${hasSave ? '<button data-action="load">Fortsätt sparat spel</button>' : ''}
+    <div class="system-buttons">
+      ${manualDay !== null ? `<button data-action="load" data-slot="manual">Fortsätt sparat spel (dag ${manualDay})</button>` : ''}
+      ${autoDay !== null ? `<button data-action="load" data-slot="auto">Fortsätt autospar (dag ${autoDay})</button>` : ''}
+    </div>
   </div>`;
 }
 
@@ -285,7 +307,10 @@ function sel(id: string): number {
 
 function act(result: game.ActionResult): void {
   if (result) showError(result);
-  else ui.dirty = true;
+  else {
+    ui.dirty = true;
+    if (ui.state) autosave(ui.state);
+  }
   render();
 }
 
@@ -300,7 +325,7 @@ function handleAction(el: HTMLElement): void {
     return;
   }
   if (action === 'load') {
-    const raw = localStorage.getItem(SAVE_KEY);
+    const raw = localStorage.getItem(el.dataset.slot === 'auto' ? AUTOSAVE_KEY : SAVE_KEY);
     if (raw) {
       ui.state = JSON.parse(raw) as GameState;
       ui.selectedPlanet = 0;
@@ -310,13 +335,14 @@ function handleAction(el: HTMLElement): void {
     return;
   }
   if (action === 'quit') {
-    if (
-      ui.state &&
-      ui.state.status === 'playing' &&
-      ui.dirty &&
-      !window.confirm('Avsluta utan att spara? Osparade framsteg går förlorade.')
-    ) {
-      return;
+    if (ui.state && ui.state.status === 'playing') {
+      if (
+        ui.dirty &&
+        !window.confirm('Avsluta utan att spara? Senaste autospar finns kvar i huvudmenyn.')
+      ) {
+        return;
+      }
+      autosave(ui.state);
     }
     ui.state = null;
     render();
@@ -335,11 +361,13 @@ function handleAction(el: HTMLElement): void {
     case 'end-day':
       game.endDay(s);
       ui.dirty = true;
+      autosave(s);
       render();
       break;
     case 'end-week':
       for (let i = 0; i < 5 && s.status === 'playing'; i++) game.endDay(s);
       ui.dirty = true;
+      autosave(s);
       render();
       break;
     case 'select':
@@ -379,7 +407,10 @@ function handleAction(el: HTMLElement): void {
 export function init(): void {
   const app = document.getElementById('app')!;
   window.addEventListener('beforeunload', (e) => {
-    if (ui.state && ui.state.status === 'playing' && ui.dirty) e.preventDefault();
+    if (ui.state && ui.state.status === 'playing' && ui.dirty) {
+      autosave(ui.state);
+      e.preventDefault();
+    }
   });
   app.addEventListener('click', (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
