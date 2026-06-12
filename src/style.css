@@ -1,0 +1,169 @@
+:root {
+  --bg: #05070d;
+  --panel: #0c1220;
+  --panel-2: #101a2e;
+  --border: #1f3050;
+  --text: #c8d6ef;
+  --dim: #788aa6;
+  --accent: #5ec8ff;
+  --good: #6fe08b;
+  --bad: #ff6b6b;
+  --gold: #ffd166;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: radial-gradient(ellipse at 30% 10%, #0b1426 0%, var(--bg) 60%);
+  color: var(--text);
+  font-family: 'Lucida Console', Monaco, monospace;
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.4; cursor: default; }
+
+input, select {
+  font: inherit;
+  color: var(--text);
+  background: #060b15;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+input[type='number'] { width: 80px; }
+
+h1, h2, h3 { margin: 0 0 8px; font-weight: normal; letter-spacing: 2px; }
+
+.screen-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  gap: 24px;
+  text-align: center;
+}
+.screen-start .title {
+  font-size: 56px;
+  letter-spacing: 14px;
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(255, 209, 102, 0.4);
+}
+.screen-start .subtitle { color: var(--dim); letter-spacing: 4px; }
+.system-buttons { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.system-buttons button {
+  width: 200px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.system-buttons .sys-label { color: var(--gold); }
+.system-buttons .sys-detail { color: var(--dim); font-size: 12px; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .stat { white-space: nowrap; }
+.topbar .stat b { color: var(--gold); font-weight: normal; }
+.topbar .spacer { flex: 1; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 270px 1fr 330px;
+  gap: 10px;
+  padding: 10px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+}
+.panel h2 { font-size: 14px; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+
+.planet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+}
+.planet-row.selected { border-color: var(--gold); }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.dot.player { background: var(--good); }
+.dot.enemy { background: var(--bad); }
+.dot.neutral { background: #5a6b8c; }
+.planet-row .meta { margin-left: auto; color: var(--dim); font-size: 12px; }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; margin-bottom: 12px; }
+.detail-grid .k { color: var(--dim); }
+
+.actions { display: flex; flex-direction: column; gap: 8px; }
+.actions .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cost { color: var(--dim); font-size: 12px; }
+
+.market-table { width: 100%; border-collapse: collapse; }
+.market-table td { padding: 3px 4px; }
+.market-table .price { color: var(--dim); font-size: 12px; }
+
+.log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: 3px; }
+.log .entry { font-size: 12px; }
+.log .entry .d { color: var(--dim); }
+.log .entry.good { color: var(--good); }
+.log .entry.bad { color: var(--bad); }
+
+.owner-player { color: var(--good); }
+.owner-enemy { color: var(--bad); }
+.owner-neutral { color: var(--dim); }
+
+#toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #2a0f14;
+  border: 1px solid var(--bad);
+  color: var(--bad);
+  padding: 10px 18px;
+  border-radius: 4px;
+  z-index: 10;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 5, 10, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  z-index: 5;
+  text-align: center;
+}
+.overlay .big { font-size: 42px; letter-spacing: 8px; }
+.overlay .big.won { color: var(--good); }
+.overlay .big.lost { color: var(--bad); }
