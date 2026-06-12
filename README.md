@@ -22,9 +22,16 @@ befolkning, terraformning och fiendens drag. Spara/ladda via `localStorage`.
 
 ## Kom igång
 
+Ny dator utan verktyg? Följ den detaljerade guiden i **[INSTALL.md](INSTALL.md)**
+(installerar Git + Node.js från noll på Windows/macOS/Linux).
+
+Har du redan Git och Node.js 20+:
+
 ```bash
+git clone https://github.com/wage-/Supremacy.git
+cd Supremacy
 npm install
-npm run dev      # startar utvecklingsserver
+npm run dev      # startar utvecklingsserver — öppna adressen som visas
 npm test         # kör enhetstester (Vitest)
 npm run build    # typkontroll + produktionsbygge till dist/
 ```
