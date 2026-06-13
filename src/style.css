@@ -222,6 +222,33 @@ h1, h2, h3 { margin: 0 0 8px; font-weight: normal; letter-spacing: 2px; }
 .overlay .big.won { color: var(--good); }
 .overlay .big.lost { color: var(--bad); }
 
+.help-panel { width: min(680px, 94vw); max-height: 86vh; overflow-y: auto; text-align: left; }
+.help-panel h3 { color: var(--accent); margin: 14px 0 4px; font-size: 14px; }
+.help-panel p { color: var(--text); line-height: 1.55; margin: 0 0 8px; }
+.help-panel p b { color: var(--gold); font-weight: normal; }
+
+.tutorial-box {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 8;
+  width: min(360px, 92vw);
+  background: var(--panel-2);
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  padding: 12px 14px;
+  box-shadow: 0 0 28px rgba(0, 0, 0, 0.65);
+}
+.tutorial-box .tut-progress { color: var(--dim); font-size: 11px; letter-spacing: 1px; }
+.tutorial-box h3 { color: var(--gold); font-size: 14px; margin: 4px 0 6px; }
+.tutorial-box p { font-size: 13px; line-height: 1.5; margin: 0 0 10px; }
+.tutorial-box .tut-hint { color: var(--good); font-size: 12px; margin-bottom: 10px; }
+.tutorial-box .tut-controls { display: flex; gap: 8px; }
+
+@media (max-width: 680px) {
+  .tutorial-box { left: 8px; right: 8px; bottom: 8px; width: auto; }
+}
+
 .stats-panel { width: min(420px, 94vw); text-align: left; }
 .stats-panel .legend { display: flex; gap: 16px; margin-bottom: 8px; font-size: 12px; }
 .chart h3 { font-size: 12px; color: var(--dim); margin: 8px 0 2px; }

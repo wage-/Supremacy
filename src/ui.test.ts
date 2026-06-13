@@ -118,6 +118,41 @@ describe('ui', () => {
     expect(document.body.textContent).toContain('Dag 2');
   });
 
+  it('visar instruktioner från menyn och stänger dem', () => {
+    click('[data-action="help"]');
+    expect(document.querySelector('.help-panel')).toBeTruthy();
+    expect(document.body.textContent).toContain('Spelinstruktioner');
+    click('[data-action="help"]'); // stäng
+    expect(document.querySelector('.help-panel')).toBeNull();
+  });
+
+  it('handledningen startar och avancerar interaktivt', () => {
+    click('[data-action="tutorial"]');
+    expect(document.querySelector('.tutorial-box')).toBeTruthy();
+    expect(document.body.textContent).toContain('steg 1/');
+
+    // Informativa steg avancerar med Nästa.
+    click('[data-action="tut-next"]'); // -> steg 2 (hemplanet)
+    click('[data-action="tut-next"]'); // -> steg 3 (bygg)
+    expect(document.body.textContent).toContain('steg 3/');
+
+    // Byggsteget avancerar automatiskt när man bygger.
+    click('[data-action="build"][data-building="solarSat"]');
+    expect(document.body.textContent).toContain('steg 4/'); // skatt
+
+    click('[data-action="tut-next"]'); // -> steg 5 (avsluta dagen)
+    expect(document.body.textContent).toContain('steg 5/');
+    click('[data-action="end-day"]'); // avslutar dagen
+    expect(document.body.textContent).toContain('steg 6/'); // kolonisera
+  });
+
+  it('handledningen kan avslutas', () => {
+    click('[data-action="tutorial"]');
+    expect(document.querySelector('.tutorial-box')).toBeTruthy();
+    click('[data-action="tut-skip"]');
+    expect(document.querySelector('.tutorial-box')).toBeNull();
+  });
+
   it('sparar och laddar via localStorage', () => {
     click('[data-action="start"][data-difficulty="1"]');
     click('[data-action="end-day"]');
