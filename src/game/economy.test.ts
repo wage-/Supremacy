@@ -4,13 +4,21 @@ import { newGame, homeOf } from './state';
 import { TERRAFORM_DAYS } from './data';
 
 describe('runEconomy', () => {
-  it('producerar resurser och tar ut skatt', () => {
+  it('producerar resurser lokalt och tar ut skatt globalt', () => {
     const s = newGame(0, 42);
-    const before = { ...s.player };
+    const home = homeOf(s, 'player')!;
+    const minerals = home.minerals;
+    const credits = s.player.credits;
     runEconomy(s, 'player');
-    expect(s.player.energy).toBeGreaterThan(before.energy - 50);
-    expect(s.player.minerals).toBeGreaterThan(before.minerals);
-    expect(s.player.credits).toBeGreaterThan(before.credits);
+    expect(home.minerals).toBeGreaterThan(minerals);
+    expect(s.player.credits).toBeGreaterThan(credits);
+  });
+
+  it('AI:ns produktion hamnar i den samlade potten', () => {
+    const s = newGame(0, 42);
+    const pooled = s.enemy.pooledMinerals;
+    runEconomy(s, 'enemy');
+    expect(s.enemy.pooledMinerals).toBeGreaterThan(pooled);
   });
 
   it('befolkningen växer när det finns mat', () => {
@@ -24,13 +32,23 @@ describe('runEconomy', () => {
   it('svält krymper befolkningen och sänker moralen', () => {
     const s = newGame(0, 42);
     const home = homeOf(s, 'player')!;
-    s.player.food = 0;
+    home.food = 0;
     home.farms = 0;
     const pop = home.population;
     const morale = home.morale;
     runEconomy(s, 'player');
     expect(home.population).toBeLessThan(pop);
     expect(home.morale).toBeLessThan(morale);
+  });
+
+  it('trupper utan mat deserterar', () => {
+    const s = newGame(0, 42);
+    const home = homeOf(s, 'player')!;
+    home.food = 0;
+    home.farms = 0;
+    home.troops = 1000;
+    runEconomy(s, 'player');
+    expect(home.troops).toBeLessThan(1000);
   });
 });
 

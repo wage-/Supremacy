@@ -1,59 +1,93 @@
-import { MARKET, SHIP_COSTS, BUILDING_COSTS, SYSTEMS, TROOPS_PER_CRUISER, FUEL_PER_CRUISER_MISSION, TROOP_COST } from './game/data';
+import {
+  BUILDING_COSTS,
+  CONVOY_COSTS,
+  SAVE_VERSION,
+  SHIP_COSTS,
+  SYSTEMS,
+  TROOPS_PER_CRUISER,
+  CARGO_PER_CRUISER,
+  TROOP_COST,
+  travelDays,
+  type Cost,
+} from './game/data';
 import * as game from './game/game';
+import { marketPrice } from './game/events';
 import { newGame } from './game/state';
-import type { Building, Difficulty, GameState, Planet, Resource } from './game/types';
+import type { Building, Difficulty, GameState, Mission, Planet, Resource } from './game/types';
+import { addHighscore, loadHighscores } from './highscore';
+import { getLang, setLang, t } from './i18n';
+import { isMuted, play, toggleMuted } from './sound';
 
 const SAVE_KEY = 'supremacy-save';
+const AUTOSAVE_KEY = 'supremacy-autosave';
 
 interface UiState {
   state: GameState | null;
   selectedPlanet: number;
+  showStats: boolean;
+  /** Finns det framsteg som inte sparats sedan senaste Spara/Ladda? */
+  dirty: boolean;
 }
 
-const ui: UiState = { state: null, selectedPlanet: 0 };
+const ui: UiState = { state: null, selectedPlanet: 0, showStats: false, dirty: false };
 
-const RESOURCE_LABELS: Record<Resource, string> = {
-  food: 'Mat',
-  energy: 'Energi',
-  minerals: 'Mineraler',
-  fuel: 'Bränsle',
-};
-
-const BUILDING_LABELS: Record<Building, string> = {
-  mine: 'Gruvstation',
-  farm: 'Odlingsstation',
-  solarSat: 'Solsatellit',
-  defense: 'Orbitalförsvar',
-};
+const RESOURCES: Resource[] = ['food', 'energy', 'minerals', 'fuel'];
+const BUILDINGS: Building[] = ['mine', 'farm', 'solarSat', 'defense'];
 
 function fmt(n: number): string {
-  return Math.round(n).toLocaleString('sv-SE');
+  return Math.round(n).toLocaleString(getLang() === 'sv' ? 'sv-SE' : 'en-GB');
 }
 
 function fmtPop(thousands: number): string {
-  return thousands >= 1000 ? `${(thousands / 1000).toFixed(1)} milj` : `${fmt(thousands)} tusen`;
+  return thousands >= 1000
+    ? t('ui.millions', { n: (thousands / 1000).toFixed(1) })
+    : t('ui.thousands', { n: fmt(thousands) });
 }
 
-function ownerLabel(p: Planet): string {
-  if (p.owner === 'player') return 'Din';
-  if (p.owner === 'enemy') return 'Fiende';
-  return 'Neutral';
-}
-
-function costText(c: { credits: number; minerals: number; energy: number }): string {
-  const parts = [`${fmt(c.credits)} kr`];
+function costText(c: Cost): string {
+  const parts = [`${fmt(c.credits)} cr`];
   if (c.minerals) parts.push(`${c.minerals} min`);
   if (c.energy) parts.push(`${c.energy} en`);
   return parts.join(', ');
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-function showError(msg: string): void {
+function showToast(msg: string, isError = true): void {
   const el = document.getElementById('toast')!;
   el.textContent = msg;
+  el.classList.toggle('ok', !isError);
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (el.hidden = true), 3500);
+  if (isError) play('error');
+}
+
+// ---------- Sparfiler ----------
+
+function readSave(key: string): GameState | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as GameState;
+    return parsed.version === SAVE_VERSION ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function autosave(s: GameState): void {
+  if (s.status === 'playing') localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(s));
+  else localStorage.removeItem(AUTOSAVE_KEY);
+}
+
+// ---------- Startskärm ----------
+
+function langButtons(): string {
+  const lang = getLang();
+  return `<span class="lang-toggle">
+    <button data-action="lang" data-lang="sv" class="${lang === 'sv' ? 'active' : ''}">SV</button>
+    <button data-action="lang" data-lang="en" class="${lang === 'en' ? 'active' : ''}">EN</button>
+  </span>`;
 }
 
 function startScreen(): string {
@@ -61,50 +95,128 @@ function startScreen(): string {
     .map((d) => {
       const s = SYSTEMS[d];
       return `<button data-action="start" data-difficulty="${d}">
-        <span class="sys-label">${s.label}</span>
-        <span>${s.name}</span>
-        <span class="sys-detail">${s.planetCount} planeter · mot ${s.opponent}</span>
+        <span class="sys-label">${t(`diff.${d}`)}</span>
+        <span>${t('ui.systemName', { name: s.name })}</span>
+        <span class="sys-detail">${s.planetCount} ${t('ui.planets')} · ${t('ui.against')} ${t(`opp.${d}`)}</span>
       </button>`;
     })
     .join('');
-  const hasSave = localStorage.getItem(SAVE_KEY) !== null;
+
+  const manual = readSave(SAVE_KEY);
+  const auto = readSave(AUTOSAVE_KEY);
+  const highscores = loadHighscores()
+    .slice(0, 5)
+    .map(
+      (h) =>
+        `<li>${t('ui.hsEntry', {
+          system: t('ui.systemName', { name: h.systemName }),
+          label: `@diff.${h.difficulty}`,
+          days: h.days,
+        })}</li>`,
+    )
+    .join('');
+
   return `<div class="screen-start">
+    <div class="start-corner">${langButtons()}</div>
     <div>
       <h1 class="title">SUPREMACY</h1>
-      <div class="subtitle">DIN VILJA SKE</div>
+      <div class="subtitle">${t('ui.tagline')}</div>
     </div>
-    <div>Välj stjärnsystem:</div>
+    <div>${t('ui.chooseSystem')}</div>
     <div class="system-buttons">${systems}</div>
-    ${hasSave ? '<button data-action="load">Fortsätt sparat spel</button>' : ''}
+    <div class="system-buttons">
+      ${manual ? `<button data-action="load" data-slot="manual">${t('ui.continueSave', { day: manual.day })}</button>` : ''}
+      ${auto ? `<button data-action="load" data-slot="auto">${t('ui.continueAutosave', { day: auto.day })}</button>` : ''}
+    </div>
+    <div class="highscores">
+      <h3>${t('ui.highscores')}</h3>
+      ${highscores ? `<ol>${highscores}</ol>` : `<div class="cost">${t('ui.noHighscores')}</div>`}
+    </div>
   </div>`;
 }
+
+// ---------- Topprad ----------
 
 function topbar(s: GameState): string {
   const f = s.player;
   return `<div class="topbar">
-    <span class="stat">Dag <b>${s.day}</b></span>
-    <span class="stat">Krediter <b>${fmt(f.credits)}</b></span>
-    <span class="stat">Mat <b>${fmt(f.food)}</b></span>
-    <span class="stat">Energi <b>${fmt(f.energy)}</b></span>
-    <span class="stat">Mineraler <b>${fmt(f.minerals)}</b></span>
-    <span class="stat">Bränsle <b>${fmt(f.fuel)}</b></span>
-    <span class="stat">Kryssare <b>${f.battleCruisers}</b></span>
-    <span class="stat">Atm.proc. <b>${f.atmosphereProcessors}</b></span>
+    <span class="stat">${t('ui.day')} <b>${s.day}</b></span>
+    <span class="stat">${t('ui.credits')} <b>${fmt(f.credits)}</b></span>
+    <span class="stat">${t('ui.fuel')} <b>${fmt(f.fuel)}</b></span>
+    <span class="stat" title="${t('ui.battleCruisers')}">⚔ <b>${f.battleCruisers}</b></span>
+    <span class="stat" title="${t('ui.cargoCruisers')}">⛟ <b>${f.cargoCruisers}</b></span>
     <span class="spacer"></span>
-    <button data-action="end-day">Nästa dag ▸</button>
-    <button data-action="end-week">+5 dagar ▸▸</button>
-    <button data-action="save">Spara</button>
-    <button data-action="quit">Huvudmeny</button>
+    <button data-action="end-day">${t('ui.nextDay')}</button>
+    <button data-action="end-week">${t('ui.next5Days')}</button>
+    <button data-action="save">${t('ui.save')}</button>
+    <button data-action="stats">${t('ui.stats')}</button>
+    <button data-action="sound" title="${t('ui.sound')}">${isMuted() ? '🔇' : '🔊'}</button>
+    ${langButtons()}
+    <button data-action="quit">${t('ui.menu')}</button>
   </div>`;
+}
+
+// ---------- Systemkarta ----------
+
+function planetPos(p: Planet, count: number, size: number): { x: number; y: number; r: number } {
+  const c = size / 2;
+  const minR = 34;
+  const maxR = c - 18;
+  const orbit = count > 1 ? minR + (p.id / (count - 1)) * (maxR - minR) : minR;
+  const angle = p.id * 2.39996 + 0.7; // gyllene vinkeln sprider planeterna
+  return { x: c + orbit * Math.cos(angle), y: c + orbit * Math.sin(angle), r: orbit };
+}
+
+function systemMap(s: GameState): string {
+  const size = 340;
+  const c = size / 2;
+  const n = s.planets.length;
+
+  const orbits = s.planets
+    .map((p) => `<circle class="orbit" cx="${c}" cy="${c}" r="${planetPos(p, n, size).r.toFixed(1)}"/>`)
+    .join('');
+
+  const fleets = s.missions
+    .filter((m) => m.owner === 'player' || s.planets[m.toId].owner === 'player')
+    .map((m) => {
+      const a = planetPos(s.planets[m.fromId], n, size);
+      const b = planetPos(s.planets[m.toId], n, size);
+      const total = travelDays(m.fromId, m.toId);
+      const prog = Math.min(1, Math.max(0, (total - m.daysLeft) / total));
+      const x = a.x + (b.x - a.x) * prog;
+      const y = a.y + (b.y - a.y) * prog;
+      return `<rect class="fleet ${m.owner}" x="${(x - 3).toFixed(1)}" y="${(y - 3).toFixed(1)}" width="6" height="6" transform="rotate(45 ${x.toFixed(1)} ${y.toFixed(1)})"/>`;
+    })
+    .join('');
+
+  const planets = s.planets
+    .map((p) => {
+      const pos = planetPos(p, n, size);
+      const selected = p.id === ui.selectedPlanet ? 'selected' : '';
+      const radius = p.isHome ? 9 : 6.5;
+      return `<g class="map-planet" data-action="select" data-id="${p.id}">
+        <circle class="body ${p.owner} ${selected}" cx="${pos.x.toFixed(1)}" cy="${pos.y.toFixed(1)}" r="${radius}"/>
+        <text x="${pos.x.toFixed(1)}" y="${(pos.y - radius - 4).toFixed(1)}">${p.name}</text>
+      </g>`;
+    })
+    .join('');
+
+  return `<svg class="system-map" viewBox="0 0 ${size} ${size}" role="img">
+    ${orbits}
+    <circle class="sun" cx="${c}" cy="${c}" r="11"/>
+    ${fleets}
+    ${planets}
+  </svg>`;
 }
 
 function planetList(s: GameState): string {
   const rows = s.planets
     .map((p) => {
-      let meta = '';
-      if (p.terraformDaysLeft > 0) meta = `terraformas ${p.terraformDaysLeft} d`;
+      let meta: string;
+      if (p.terraformDaysLeft > 0) meta = t('ui.terraformingShort', { days: p.terraformDaysLeft });
       else if (p.habitable) meta = fmtPop(p.population);
-      else meta = 'karg';
+      else if (p.outpost) meta = t('ui.outpostShort');
+      else meta = t('ui.barren');
       return `<button class="planet-row ${p.id === ui.selectedPlanet ? 'selected' : ''}" data-action="select" data-id="${p.id}">
         <span class="dot ${p.owner}"></span>
         <span>${p.name}${p.isHome ? ' ✦' : ''}</span>
@@ -112,55 +224,109 @@ function planetList(s: GameState): string {
       </button>`;
     })
     .join('');
-  return `<div class="panel"><h2>${SYSTEMS[s.difficulty].name}</h2>${rows}</div>`;
+  return `<div class="panel">
+    <h2>${t('ui.systemName', { name: SYSTEMS[s.difficulty].name })}</h2>
+    ${systemMap(s)}
+    ${rows}
+  </div>`;
 }
 
-function buildButtons(): string {
-  return (Object.keys(BUILDING_LABELS) as Building[])
+// ---------- Planetdetaljer ----------
+
+function ownerLabel(p: Planet): string {
+  if (p.owner === 'player') return t('ui.ownerYou');
+  if (p.owner === 'enemy') return t('ui.ownerEnemy');
+  return t('ui.ownerNeutral');
+}
+
+function statusLabel(p: Planet): string {
+  if (p.terraformDaysLeft > 0) return t('ui.statusTerraforming', { days: p.terraformDaysLeft });
+  if (p.habitable) return t('ui.statusHabitable');
+  if (p.outpost) return t('ui.statusOutpost');
+  return t('ui.statusBarren');
+}
+
+function playerPlanetActions(s: GameState, p: Planet): string {
+  const buildButtons = BUILDINGS.filter((b) => b !== 'farm' || p.habitable)
     .map(
       (b) => `<div class="row">
-        <button data-action="build" data-building="${b}">Bygg ${BUILDING_LABELS[b]}</button>
+        <button data-action="build" data-building="${b}">${t('ui.build', { name: t(`b.${b}`) })}</button>
         <span class="cost">${costText(BUILDING_COSTS[b])}</span>
       </div>`,
     )
     .join('');
+
+  const trainUi = p.habitable
+    ? `<div class="row">
+        <button data-action="train">${t('ui.train')}</button>
+        <input id="train-count" type="number" value="200" min="1" />
+        <span class="cost">${t('ui.trainCost', { credits: TROOP_COST.credits, energy: TROOP_COST.energy })}</span>
+      </div>
+      <div class="row">
+        <span>${t('ui.tax')}: <b id="tax-label">${p.taxRate}%</b></span>
+        <input data-action="tax" id="tax-slider" type="range" min="0" max="100" step="5" value="${p.taxRate}" />
+      </div>`
+    : '';
+
+  const troopTargets = s.planets.filter((x) => x.id !== p.id && x.owner !== 'neutral');
+  const troopsUi =
+    troopTargets.length > 0
+      ? `<div class="row">
+          <button data-action="send-troops">${t('ui.sendTroops')}</button>
+          <input id="troop-count" type="number" value="500" min="1" />
+          <span>${t('ui.to')}</span>
+          <select id="troop-target">${troopTargets
+            .map((x) => `<option value="${x.id}">${x.name}${x.owner === 'enemy' ? ' ⚔' : ''}</option>`)
+            .join('')}</select>
+        </div>
+        <div class="cost">${t('ui.troopHint', { cap: TROOPS_PER_CRUISER })}</div>`
+      : '';
+
+  const cargoTargets = s.planets.filter((x) => x.id !== p.id && x.owner === 'player');
+  const cargoUi =
+    cargoTargets.length > 0
+      ? `<div class="row">
+          <button data-action="send-cargo">${t('ui.sendCargo')}</button>
+          <input id="cargo-food" type="number" value="0" min="0" title="${t('res.food')}" />
+          <input id="cargo-energy" type="number" value="0" min="0" title="${t('res.energy')}" />
+          <input id="cargo-minerals" type="number" value="0" min="0" title="${t('res.minerals')}" />
+          <span>${t('ui.to')}</span>
+          <select id="cargo-target">${cargoTargets.map((x) => `<option value="${x.id}">${x.name}</option>`).join('')}</select>
+        </div>
+        <div class="cost">${t('res.food')} / ${t('res.energy')} / ${t('res.minerals')} — ${t('ui.cargoHint', { cap: CARGO_PER_CRUISER })}</div>`
+      : '';
+
+  return `<div class="actions">${buildButtons}${trainUi}${troopsUi}${cargoUi}</div>`;
 }
 
-function playerPlanetActions(s: GameState, p: Planet): string {
-  const others = s.planets.filter((x) => x.owner === 'player' && x.id !== p.id);
-  const enemies = s.planets.filter((x) => x.owner === 'enemy');
-  const moveUi =
-    others.length > 0
-      ? `<div class="row">
-          <button data-action="move">Flytta trupper</button>
-          <input id="move-count" type="number" value="100" min="1" />
-          <span>till</span>
-          <select id="move-target">${others.map((x) => `<option value="${x.id}">${x.name}</option>`).join('')}</select>
-        </div>`
-      : '';
-  const invadeUi =
-    enemies.length > 0
-      ? `<div class="row">
-          <button data-action="invade">Invadera</button>
-          <input id="invade-count" type="number" value="500" min="1" />
-          <span>mot</span>
-          <select id="invade-target">${enemies.map((x) => `<option value="${x.id}">${x.name}</option>`).join('')}</select>
-        </div>
-        <div class="cost">1 kryssare per ${TROOPS_PER_CRUISER} man, ${FUEL_PER_CRUISER_MISSION} bränsle per kryssare.</div>`
-      : '';
+function neutralPlanetActions(s: GameState, p: Planet): string {
+  if (p.terraformingBy || s.missions.some((m) => m.toId === p.id && (m.type === 'processor' || m.type === 'outpost'))) {
+    return '';
+  }
   return `<div class="actions">
-    ${buildButtons()}
     <div class="row">
-      <button data-action="train">Värva trupper</button>
-      <input id="train-count" type="number" value="200" min="1" />
-      <span class="cost">${TROOP_COST.credits} kr + ${TROOP_COST.energy} en per man (tas ur befolkningen)</span>
+      <button data-action="send-processor">${t('ui.deployProcessor')}</button>
+      <span class="cost">${costText(CONVOY_COSTS.processor)}</span>
     </div>
     <div class="row">
-      <span>Skatt: <b id="tax-label">${p.taxRate}%</b></span>
-      <input data-action="tax" id="tax-slider" type="range" min="0" max="100" step="5" value="${p.taxRate}" />
+      <button data-action="send-outpost">${t('ui.deployOutpost')}</button>
+      <span class="cost">${costText(CONVOY_COSTS.outpost)}</span>
     </div>
-    ${moveUi}
-    ${invadeUi}
+  </div>`;
+}
+
+function enemyPlanetActions(p: Planet): string {
+  return `<div class="actions">
+    <div class="cost">${t('ui.enemyPlanetHint')}</div>
+    <div class="row">
+      <button data-action="send-probe">${t('ui.sendProbe')}</button>
+      <span class="cost">${costText(CONVOY_COSTS.probe)}${p.scoutedUntil > 0 ? ` · ${t('ui.scouted', { day: p.scoutedUntil })}` : ''}</span>
+    </div>
+    <div class="row">
+      <button data-action="bombard">${t('ui.bombard')}</button>
+      <input id="bombard-count" type="number" value="2" min="1" />
+      <span class="cost">${t('ui.bombardHint')}</span>
+    </div>
   </div>`;
 }
 
@@ -168,33 +334,37 @@ function planetDetail(s: GameState): string {
   const p = s.planets.find((x) => x.id === ui.selectedPlanet) ?? s.planets[0];
   ui.selectedPlanet = p.id;
 
+  const mine = p.owner === 'player';
+  const scouted = p.owner === 'enemy' && s.day <= p.scoutedUntil;
+  const known = mine || scouted;
+  const q = (v: string | number) => (known ? String(v) : '?');
+
   const rows: Array<[string, string]> = [
-    ['Ägare', ownerLabel(p)],
-    ['Status', p.terraformDaysLeft > 0 ? `Terraformas (${p.terraformDaysLeft} dagar kvar)` : p.habitable ? 'Beboelig' : 'Karg'],
-    ['Befolkning', p.habitable ? fmtPop(p.population) : '–'],
-    ['Moral', p.habitable ? `${Math.round(p.morale)} %` : '–'],
-    ['Trupper', p.owner === 'player' ? fmt(p.troops) : p.owner === 'enemy' ? 'okänt' : '–'],
-    ['Gruvor', p.owner === 'player' ? String(p.mines) : '?'],
-    ['Odlingar', p.owner === 'player' ? String(p.farms) : '?'],
-    ['Solsatelliter', p.owner === 'player' ? String(p.solarSats) : '?'],
-    ['Orbitalförsvar', p.owner === 'player' ? String(p.defense) : '?'],
-    ['Mineralrikedom', `${Math.round(p.mineralRichness * 100)} %`],
-    ['Bördighet', `${Math.round(p.fertility * 100)} %`],
-    ['Solinstrålning', `${Math.round(p.solarFlux * 100)} %`],
+    [t('ui.owner'), ownerLabel(p)],
+    [t('ui.status'), statusLabel(p)],
+    [t('ui.population'), p.habitable ? fmtPop(p.population) : '–'],
+    [t('ui.morale'), mine && p.habitable ? `${Math.round(p.morale)} %` : p.habitable ? '?' : '–'],
+    [t('ui.troops'), p.owner === 'neutral' ? '–' : q(fmt(p.troops))],
+    [t('ui.mines'), p.owner === 'neutral' ? '–' : q(p.mines)],
+    [t('ui.farms'), p.owner === 'neutral' ? '–' : q(p.farms)],
+    [t('ui.solarSats'), p.owner === 'neutral' ? '–' : q(p.solarSats)],
+    [t('ui.defense'), p.owner === 'neutral' ? '–' : q(p.defense)],
+    [t('ui.richness'), `${Math.round(p.mineralRichness * 100)} %`],
+    [t('ui.fertility'), `${Math.round(p.fertility * 100)} %`],
+    [t('ui.solarFlux'), `${Math.round(p.solarFlux * 100)} %`],
   ];
+  if (mine) {
+    rows.push([
+      t('ui.localStocks'),
+      `${t('res.food')} ${fmt(p.food)} · ${t('res.energy')} ${fmt(p.energy)} · ${t('res.minerals')} ${fmt(p.minerals)}`,
+    ]);
+  }
   const grid = rows.map(([k, v]) => `<span class="k">${k}</span><span>${v}</span>`).join('');
 
   let actions = '';
-  if (p.owner === 'player') {
-    actions = playerPlanetActions(s, p);
-  } else if (p.owner === 'neutral' && p.terraformingBy === null) {
-    actions = `<div class="actions"><div class="row">
-      <button data-action="deploy">Placera atmosfärprocessor</button>
-      <span class="cost">kräver 1 i lager · i lager: ${s.player.atmosphereProcessors}</span>
-    </div></div>`;
-  } else if (p.owner === 'enemy') {
-    actions = `<div class="cost">Fientlig planet – välj en av dina planeter för att skicka en invasionsstyrka härifrån.</div>`;
-  }
+  if (mine) actions = playerPlanetActions(s, p);
+  else if (p.owner === 'neutral') actions = neutralPlanetActions(s, p);
+  else actions = enemyPlanetActions(p);
 
   return `<div class="panel">
     <h2>${p.name}${p.isHome ? ' ✦' : ''} <span class="owner-${p.owner}">[${ownerLabel(p)}]</span></h2>
@@ -203,42 +373,115 @@ function planetDetail(s: GameState): string {
   </div>`;
 }
 
+// ---------- Sidopanel ----------
+
+function missionLabel(s: GameState, m: Mission): string {
+  const target = s.planets[m.toId].name;
+  if (m.owner === 'enemy') return t('ui.unknownFleet', { planet: target });
+  return t(`m.${m.type}`, { planet: target });
+}
+
 function sidebar(s: GameState): string {
-  const market = (Object.keys(MARKET) as Resource[])
+  const market = RESOURCES.map((r) => {
+    const price = marketPrice(s, r);
+    const swung = s.marketSwings[r] ? ' swung' : '';
+    return `<tr>
+      <td>${t(`res.${r}`)}</td>
+      <td><input id="qty-${r}" type="number" value="100" min="1" /></td>
+      <td><button data-action="buy-res" data-res="${r}">${t('ui.buy')}</button></td>
+      <td><button data-action="sell-res" data-res="${r}">${t('ui.sell')}</button></td>
+      <td class="price${swung}">${price.buy}/${price.sell} cr</td>
+    </tr>`;
+  }).join('');
+
+  const missions = s.missions
+    .filter((m) => m.owner === 'player' || s.planets[m.toId].owner === 'player')
     .map(
-      (r) => `<tr>
-        <td>${RESOURCE_LABELS[r]}</td>
-        <td><input id="qty-${r}" type="number" value="100" min="1" /></td>
-        <td><button data-action="buy-res" data-res="${r}">Köp</button></td>
-        <td><button data-action="sell-res" data-res="${r}">Sälj</button></td>
-        <td class="price">${MARKET[r].buy}/${MARKET[r].sell} kr</td>
-      </tr>`,
+      (m) => `<div class="entry ${m.owner === 'enemy' ? 'bad' : ''}">
+        ${missionLabel(s, m)} — ${t('ui.missionDays', { days: m.daysLeft })}
+      </div>`,
     )
     .join('');
 
   const logHtml = s.log
     .slice(-60)
-    .map((e) => `<div class="entry ${e.kind}"><span class="d">[${e.day}]</span> ${e.text}</div>`)
+    .map((e) => `<div class="entry ${e.kind}"><span class="d">[${e.day}]</span> ${t(e.key, e.params)}</div>`)
     .reverse()
     .join('');
 
   return `<div>
     <div class="panel">
-      <h2>Skeppsvarv</h2>
+      <h2>${t('ui.shipyard')}</h2>
       <div class="actions">
-        <div class="row"><button data-action="buy-cruiser">Köp stridskryssare</button>
+        <div class="row"><button data-action="buy-battle">${t('ui.buyBattleCruiser')}</button>
           <span class="cost">${costText(SHIP_COSTS.battleCruiser)}</span></div>
-        <div class="row"><button data-action="buy-processor">Köp atmosfärprocessor</button>
-          <span class="cost">${costText(SHIP_COSTS.atmosphereProcessor)}</span></div>
+        <div class="row"><button data-action="buy-cargo">${t('ui.buyCargoCruiser')}</button>
+          <span class="cost">${costText(SHIP_COSTS.cargoCruiser)}</span></div>
       </div>
     </div>
-    <div class="panel" style="margin-top:10px">
-      <h2>Galaktisk marknad (köp/sälj)</h2>
+    <div class="panel">
+      <h2>${t('ui.market')}</h2>
       <table class="market-table">${market}</table>
+      <div class="cost">${t('ui.marketHint')}</div>
     </div>
-    <div class="panel" style="margin-top:10px">
-      <h2>Logg</h2>
+    <div class="panel">
+      <h2>${t('ui.missions')}</h2>
+      <div class="log">${missions || `<div class="entry cost">${t('ui.noMissions')}</div>`}</div>
+    </div>
+    <div class="panel">
+      <h2>${t('ui.log')}</h2>
       <div class="log">${logHtml}</div>
+    </div>
+  </div>`;
+}
+
+// ---------- Statistik ----------
+
+function polyline(values: Array<{ x: number; y: number }>, maxX: number, maxY: number, w: number, h: number): string {
+  if (values.length < 2) return '';
+  const pts = values
+    .map((v) => `${((v.x / maxX) * (w - 10) + 5).toFixed(1)},${(h - 5 - (v.y / maxY) * (h - 15)).toFixed(1)}`)
+    .join(' ');
+  return pts;
+}
+
+function statsOverlay(s: GameState): string {
+  if (!ui.showStats) return '';
+  const hist = s.history;
+  const w = 360;
+  const h = 110;
+
+  const charts = (
+    [
+      ['ui.statsCredits', (p: (typeof hist)[number]) => p.playerCredits, (p: (typeof hist)[number]) => p.enemyCredits],
+      ['ui.statsTroops', (p: (typeof hist)[number]) => p.playerTroops, (p: (typeof hist)[number]) => p.enemyTroops],
+      ['ui.statsPlanets', (p: (typeof hist)[number]) => p.playerPlanets, (p: (typeof hist)[number]) => p.enemyPlanets],
+    ] as const
+  )
+    .map(([key, mine, theirs]) => {
+      const maxX = Math.max(s.day, 2);
+      const maxY = Math.max(...hist.map(mine), ...hist.map(theirs), 1);
+      const minePts = polyline(hist.map((p) => ({ x: p.day, y: mine(p) })), maxX, maxY, w, h);
+      const theirPts = polyline(hist.map((p) => ({ x: p.day, y: theirs(p) })), maxX, maxY, w, h);
+      return `<div class="chart">
+        <h3>${t(key)}</h3>
+        <svg viewBox="0 0 ${w} ${h}">
+          <polyline class="line player" points="${minePts}"/>
+          <polyline class="line enemy" points="${theirPts}"/>
+        </svg>
+      </div>`;
+    })
+    .join('');
+
+  return `<div class="overlay">
+    <div class="panel stats-panel">
+      <h2>${t('ui.statsTitle', { day: s.day })}</h2>
+      <div class="legend">
+        <span class="owner-player">■ ${t('ui.you')}</span>
+        <span class="owner-enemy">■ ${t('ui.enemy')}</span>
+      </div>
+      ${charts}
+      <button data-action="stats">${t('ui.close')}</button>
     </div>
   </div>`;
 }
@@ -246,12 +489,15 @@ function sidebar(s: GameState): string {
 function endOverlay(s: GameState): string {
   if (s.status === 'playing') return '';
   const won = s.status === 'won';
+  const opponent = `@opp.${s.difficulty}`;
   return `<div class="overlay">
-    <div class="big ${s.status}">${won ? 'SUPREMACY!' : 'NEDERLAG'}</div>
-    <div>${won ? `Du krossade ${SYSTEMS[s.difficulty].opponent} på dag ${s.day}.` : `${SYSTEMS[s.difficulty].opponent} intog Starbas på dag ${s.day}.`}</div>
-    <button data-action="quit">Tillbaka till huvudmenyn</button>
+    <div class="big ${s.status}">${won ? t('ui.victory') : t('ui.defeat')}</div>
+    <div>${won ? t('ui.wonText', { opponent, day: s.day }) : t('ui.lostText', { opponent, day: s.day })}</div>
+    <button data-action="quit">${t('ui.backToMenu')}</button>
   </div>`;
 }
+
+// ---------- Rendering ----------
 
 export function render(): void {
   const app = document.getElementById('app')!;
@@ -267,9 +513,12 @@ export function render(): void {
       ${planetDetail(s)}
       ${sidebar(s)}
     </div>
+    ${statsOverlay(s)}
     ${endOverlay(s)}
   `;
 }
+
+// ---------- Händelser ----------
 
 function num(id: string): number {
   const el = document.getElementById(id) as HTMLInputElement | null;
@@ -282,30 +531,79 @@ function sel(id: string): number {
 }
 
 function act(result: game.ActionResult): void {
-  if (result) showError(result);
+  if (result) showToast(t(result.key, result.params));
+  else {
+    ui.dirty = true;
+    play('click');
+    if (ui.state) autosave(ui.state);
+  }
+  render();
+}
+
+function afterDays(s: GameState, logLenBefore: number): void {
+  ui.dirty = true;
+  autosave(s);
+  const newEntries = s.log.slice(logLenBefore);
+  if (s.status === 'won') {
+    addHighscore({
+      date: new Date().toISOString().slice(0, 10),
+      difficulty: s.difficulty,
+      systemName: SYSTEMS[s.difficulty].name,
+      days: s.day,
+    });
+    play('win');
+  } else if (s.status === 'lost') {
+    play('lose');
+  } else if (newEntries.some((e) => e.key.startsWith('log.invasion') || e.key.startsWith('log.bombard'))) {
+    play('battle');
+  } else if (newEntries.some((e) => e.kind === 'good')) {
+    play('good');
+  } else {
+    play('day');
+  }
   render();
 }
 
 function handleAction(el: HTMLElement): void {
   const action = el.dataset.action!;
 
+  if (action === 'lang') {
+    setLang(el.dataset.lang === 'en' ? 'en' : 'sv');
+    render();
+    return;
+  }
+  if (action === 'sound') {
+    toggleMuted();
+    render();
+    return;
+  }
   if (action === 'start') {
     ui.state = newGame(Number(el.dataset.difficulty) as Difficulty);
     ui.selectedPlanet = 0;
+    ui.showStats = false;
+    ui.dirty = true;
+    play('title');
     render();
     return;
   }
   if (action === 'load') {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      ui.state = JSON.parse(raw) as GameState;
+    const loaded = readSave(el.dataset.slot === 'auto' ? AUTOSAVE_KEY : SAVE_KEY);
+    if (loaded) {
+      ui.state = loaded;
       ui.selectedPlanet = 0;
+      ui.showStats = false;
+      ui.dirty = false;
     }
     render();
     return;
   }
   if (action === 'quit') {
+    if (ui.state && ui.state.status === 'playing') {
+      if (ui.dirty && !window.confirm(t('ui.confirmQuit'))) return;
+      autosave(ui.state);
+    }
     ui.state = null;
+    ui.showStats = false;
     render();
     return;
   }
@@ -316,16 +614,25 @@ function handleAction(el: HTMLElement): void {
   switch (action) {
     case 'save':
       localStorage.setItem(SAVE_KEY, JSON.stringify(s));
-      showError('Spelet sparat.');
+      ui.dirty = false;
+      showToast(t('ui.saved'), false);
       break;
-    case 'end-day':
+    case 'stats':
+      ui.showStats = !ui.showStats;
+      render();
+      break;
+    case 'end-day': {
+      const before = s.log.length;
       game.endDay(s);
-      render();
+      afterDays(s, before);
       break;
-    case 'end-week':
+    }
+    case 'end-week': {
+      const before = s.log.length;
       for (let i = 0; i < 5 && s.status === 'playing'; i++) game.endDay(s);
-      render();
+      afterDays(s, before);
       break;
+    }
     case 'select':
       ui.selectedPlanet = Number(el.dataset.id);
       render();
@@ -333,23 +640,38 @@ function handleAction(el: HTMLElement): void {
     case 'build':
       act(game.build(s, ui.selectedPlanet, el.dataset.building as Building));
       break;
-    case 'buy-cruiser':
+    case 'buy-battle':
       act(game.buyShip(s, 'battleCruiser'));
       break;
-    case 'buy-processor':
-      act(game.buyShip(s, 'atmosphereProcessor'));
+    case 'buy-cargo':
+      act(game.buyShip(s, 'cargoCruiser'));
       break;
-    case 'deploy':
-      act(game.deployProcessor(s, ui.selectedPlanet));
+    case 'send-processor':
+      act(game.sendProcessor(s, ui.selectedPlanet));
+      break;
+    case 'send-outpost':
+      act(game.sendOutpost(s, ui.selectedPlanet));
+      break;
+    case 'send-probe':
+      act(game.sendProbe(s, ui.selectedPlanet));
+      break;
+    case 'bombard':
+      act(game.bombard(s, ui.selectedPlanet, num('bombard-count')));
       break;
     case 'train':
       act(game.trainTroops(s, ui.selectedPlanet, num('train-count')));
       break;
-    case 'move':
-      act(game.moveTroops(s, ui.selectedPlanet, sel('move-target'), num('move-count')));
+    case 'send-troops':
+      act(game.sendTroops(s, ui.selectedPlanet, sel('troop-target'), num('troop-count')));
       break;
-    case 'invade':
-      act(game.invade(s, ui.selectedPlanet, sel('invade-target'), num('invade-count')));
+    case 'send-cargo':
+      act(
+        game.sendCargo(s, ui.selectedPlanet, sel('cargo-target'), {
+          food: Math.max(0, num('cargo-food')),
+          energy: Math.max(0, num('cargo-energy')),
+          minerals: Math.max(0, num('cargo-minerals')),
+        }),
+      );
       break;
     case 'buy-res':
       act(game.buyResource(s, el.dataset.res as Resource, num(`qty-${el.dataset.res}`)));
@@ -362,6 +684,12 @@ function handleAction(el: HTMLElement): void {
 
 export function init(): void {
   const app = document.getElementById('app')!;
+  window.addEventListener('beforeunload', (e) => {
+    if (ui.state && ui.state.status === 'playing' && ui.dirty) {
+      autosave(ui.state);
+      e.preventDefault();
+    }
+  });
   app.addEventListener('click', (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (el && el.dataset.action !== 'tax') handleAction(el);
