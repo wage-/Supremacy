@@ -17,6 +17,7 @@ import type { Building, Difficulty, GameState, Mission, Planet, Resource } from 
 import { addHighscore, loadHighscores } from './highscore';
 import { getLang, setLang, t } from './i18n';
 import { isMuted, play, toggleMuted } from './sound';
+import { TUTORIAL_COUNT, TUTORIAL_STEPS } from './tutorial';
 
 const SAVE_KEY = 'supremacy-save';
 const AUTOSAVE_KEY = 'supremacy-autosave';
@@ -25,11 +26,24 @@ interface UiState {
   state: GameState | null;
   selectedPlanet: number;
   showStats: boolean;
+  showHelp: boolean;
+  /** Aktivt handledningssteg, eller null när handledningen inte körs. */
+  tutorial: number | null;
+  /** Baslinjevärde för att upptäcka när det aktiva steget är avklarat. */
+  tutorialBaseline: number;
   /** Finns det framsteg som inte sparats sedan senaste Spara/Ladda? */
   dirty: boolean;
 }
 
-const ui: UiState = { state: null, selectedPlanet: 0, showStats: false, dirty: false };
+const ui: UiState = {
+  state: null,
+  selectedPlanet: 0,
+  showStats: false,
+  showHelp: false,
+  tutorial: null,
+  tutorialBaseline: 0,
+  dirty: false,
+};
 
 const RESOURCES: Resource[] = ['food', 'energy', 'minerals', 'fuel'];
 const BUILDINGS: Building[] = ['mine', 'farm', 'solarSat', 'defense'];
@@ -128,6 +142,10 @@ function startScreen(): string {
       ${manual ? `<button data-action="load" data-slot="manual">${t('ui.continueSave', { day: manual.day })}</button>` : ''}
       ${auto ? `<button data-action="load" data-slot="auto">${t('ui.continueAutosave', { day: auto.day })}</button>` : ''}
     </div>
+    <div class="system-buttons">
+      <button data-action="tutorial">${t('ui.tutorialBtn')}</button>
+      <button data-action="help">${t('ui.instructions')}</button>
+    </div>
     <div class="highscores">
       <h3>${t('ui.highscores')}</h3>
       ${highscores ? `<ol>${highscores}</ol>` : `<div class="cost">${t('ui.noHighscores')}</div>`}
@@ -150,6 +168,7 @@ function topbar(s: GameState): string {
     <button data-action="end-week">${t('ui.next5Days')}</button>
     <button data-action="save">${t('ui.save')}</button>
     <button data-action="stats">${t('ui.stats')}</button>
+    <button data-action="help" title="${t('ui.instructions')}">?</button>
     <button data-action="sound" title="${t('ui.sound')}">${isMuted() ? '🔇' : '🔊'}</button>
     ${langButtons()}
     <button data-action="quit">${t('ui.menu')}</button>
@@ -497,15 +516,89 @@ function endOverlay(s: GameState): string {
   </div>`;
 }
 
+// ---------- Instruktioner (manual) ----------
+
+function helpOverlay(): string {
+  if (!ui.showHelp) return '';
+  const sections = Array.from({ length: 9 }, (_, i) => `<h3>${t(`help.${i}.h`)}</h3><p>${t(`help.${i}.b`)}</p>`).join('');
+  return `<div class="overlay">
+    <div class="panel help-panel">
+      <h2>${t('help.title')}</h2>
+      ${sections}
+      <button data-action="help">${t('ui.close')}</button>
+    </div>
+  </div>`;
+}
+
+// ---------- Handledning ----------
+
+/** Läs in steget: fånga baslinje och markera ev. vägledd planet. */
+function enterTutorialStep(s: GameState, i: number): void {
+  const step = TUTORIAL_STEPS[i];
+  ui.tutorialBaseline = step.capture ? step.capture(s) : 0;
+  if (step.select) {
+    const id = step.select(s);
+    if (id !== null) ui.selectedPlanet = id;
+  }
+}
+
+function startTutorial(): void {
+  ui.state = newGame(0);
+  ui.selectedPlanet = 0;
+  ui.showStats = false;
+  ui.showHelp = false;
+  ui.dirty = true;
+  ui.tutorial = 0;
+  enterTutorialStep(ui.state, 0);
+  play('title');
+}
+
+function advanceTutorial(s: GameState): void {
+  if (ui.tutorial === null) return;
+  const next = ui.tutorial + 1;
+  if (next >= TUTORIAL_COUNT) ui.tutorial = null;
+  else {
+    ui.tutorial = next;
+    enterTutorialStep(s, next);
+  }
+}
+
+/** Avancera automatiskt så länge det aktiva stegets villkor är uppfyllt. */
+function maybeAdvanceTutorial(s: GameState): void {
+  while (ui.tutorial !== null) {
+    const step = TUTORIAL_STEPS[ui.tutorial];
+    if (step.done && step.done(s, ui.tutorialBaseline)) advanceTutorial(s);
+    else break;
+  }
+}
+
+function tutorialBox(s: GameState): string {
+  if (ui.tutorial === null || s.status !== 'playing') return '';
+  const i = ui.tutorial;
+  const step = TUTORIAL_STEPS[i];
+  const hint = step.done ? `<div class="tut-hint">${t('ui.tutDoThis')}</div>` : '';
+  return `<div class="tutorial-box">
+    <div class="tut-progress">${t('ui.tutorialStep', { n: i + 1, total: TUTORIAL_COUNT })}</div>
+    <h3>${t(`tut.${i}.title`)}</h3>
+    <p>${t(`tut.${i}.body`)}</p>
+    ${hint}
+    <div class="tut-controls">
+      <button data-action="tut-next">${t('ui.tutNext')}</button>
+      <button data-action="tut-skip">${t('ui.tutSkip')}</button>
+    </div>
+  </div>`;
+}
+
 // ---------- Rendering ----------
 
 export function render(): void {
   const app = document.getElementById('app')!;
   const s = ui.state;
   if (!s) {
-    app.innerHTML = startScreen();
+    app.innerHTML = startScreen() + helpOverlay();
     return;
   }
+  maybeAdvanceTutorial(s);
   app.innerHTML = `
     ${topbar(s)}
     <div class="layout">
@@ -513,8 +606,10 @@ export function render(): void {
       ${planetDetail(s)}
       ${sidebar(s)}
     </div>
+    ${tutorialBox(s)}
     ${statsOverlay(s)}
     ${endOverlay(s)}
+    ${helpOverlay()}
   `;
 }
 
@@ -577,10 +672,21 @@ function handleAction(el: HTMLElement): void {
     render();
     return;
   }
+  if (action === 'help') {
+    ui.showHelp = !ui.showHelp;
+    render();
+    return;
+  }
+  if (action === 'tutorial') {
+    startTutorial();
+    render();
+    return;
+  }
   if (action === 'start') {
     ui.state = newGame(Number(el.dataset.difficulty) as Difficulty);
     ui.selectedPlanet = 0;
     ui.showStats = false;
+    ui.tutorial = null;
     ui.dirty = true;
     play('title');
     render();
@@ -592,6 +698,7 @@ function handleAction(el: HTMLElement): void {
       ui.state = loaded;
       ui.selectedPlanet = 0;
       ui.showStats = false;
+      ui.tutorial = null;
       ui.dirty = false;
     }
     render();
@@ -604,6 +711,18 @@ function handleAction(el: HTMLElement): void {
     }
     ui.state = null;
     ui.showStats = false;
+    ui.showHelp = false;
+    ui.tutorial = null;
+    render();
+    return;
+  }
+  if (action === 'tut-next') {
+    if (ui.state && ui.tutorial !== null) advanceTutorial(ui.state);
+    render();
+    return;
+  }
+  if (action === 'tut-skip') {
+    ui.tutorial = null;
     render();
     return;
   }

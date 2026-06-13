@@ -25,6 +25,8 @@ Vinn genom att erövra fiendens hemfäste — förlora om din Starbase faller.
   (aggressorn, ekonomen, expansionisten) som slumpas varje parti
 - **Systemkarta** med omloppsbanor och flottrörelser, **statistikskärm** med
   grafer, **topplista**, retro-ljudeffekter (WebAudio) och mobilanpassad layout
+- **Interaktiv handledning** som guidar nya spelare steg för steg, plus en
+  **instruktionsskärm** (manual) som når från menyn och under spel
 
 Spelet är turordningsbaserat: tryck **Nästa dag** så rullar produktion,
 flottor, terraformning och fiendens drag. Sparas via `localStorage`:
@@ -67,6 +69,7 @@ src/
     ai.ts        Fiendens dagliga beslut (tre personligheter)
     game.ts      Spelarhandlingar + dagsväxling + historik
   i18n.ts        Översättningar (svenska/engelska); loggen lagrar nycklar
+  tutorial.ts    Stegdefinitioner för den interaktiva handledningen
   ui.ts          Menystyrd DOM-rendering med SVG-systemkarta
   sound.ts       Chiptune-ljudeffekter via WebAudio
   highscore.ts   Lokal topplista
